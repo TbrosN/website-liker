@@ -8,6 +8,8 @@
 
 body {
   margin: 0;
+  border-radius: 14px;
+  overflow: hidden;
 }
 
 .popup-root {
@@ -17,6 +19,7 @@ body {
   background: linear-gradient(180deg, #0f172a, #111827);
   color: #f9fafb;
   font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
+  border-radius: 14px;
 }
 
 .eyebrow {
@@ -43,25 +46,32 @@ body {
 
 .preference-actions {
   display: flex;
-  gap: 8px;
+  align-items: center;
+  border-radius: 999px;
+  border: 1px solid rgba(148, 163, 184, 0.4);
+  background: rgba(30, 41, 59, 0.95);
+  overflow: hidden;
   margin-bottom: 10px;
 }
 
 .preference-button {
   flex: 1;
   border: 0;
-  border-radius: 999px;
   height: 40px;
-  font-size: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-size: 16px;
   font-weight: 700;
   cursor: pointer;
-  background: #1e293b;
+  background: transparent;
   color: #f8fafc;
-  transition: transform 0.15s ease, background-color 0.2s ease, opacity 0.2s ease;
+  transition: background-color 0.2s ease, opacity 0.2s ease;
 }
 
 .preference-button:hover:enabled {
-  transform: translateY(-1px);
+  background: rgba(148, 163, 184, 0.14);
 }
 
 .preference-button:disabled {
@@ -70,11 +80,29 @@ body {
 }
 
 .preference-button.like.active {
-  background: #16a34a;
+  background: rgba(21, 128, 61, 0.24);
+  color: #86efac;
 }
 
 .preference-button.dislike.active {
-  background: #dc2626;
+  background: rgba(185, 28, 28, 0.24);
+  color: #fda4af;
+}
+
+.preference-icon {
+  line-height: 1;
+}
+
+.preference-count {
+  font-size: 15px;
+  letter-spacing: 0.01em;
+}
+
+.preference-divider {
+  width: 1px;
+  align-self: stretch;
+  background: rgba(148, 163, 184, 0.45);
+  flex: 0 0 auto;
 }
 
 .show-floater-button {
@@ -105,36 +133,9 @@ body {
   color: #cbd5e1;
 }
 
-.community-card {
-  margin: 0 0 10px;
-  padding: 10px 12px;
-  border-radius: 10px;
-  border: 1px solid rgba(148, 163, 184, 0.35);
-  background: rgba(15, 23, 42, 0.45);
-}
-
-.community-label {
-  margin: 0 0 6px;
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: #93c5fd;
-}
-
-.community-counts {
-  display: flex;
-  gap: 12px;
-  flex-wrap: wrap;
-  font-size: 12px;
-  font-weight: 700;
-  color: #e2e8f0;
-}
-
-.community-loading,
 .community-error {
-  margin: 0;
+  margin: 0 0 10px;
   font-size: 12px;
-  color: #cbd5e1;
 }
 
 .community-error {

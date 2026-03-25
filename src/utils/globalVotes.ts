@@ -2,6 +2,7 @@ import { normalizeSiteKey, normalizeSiteUrl, SitePreference } from './siteLikes'
 
 const SITE_COUNTS_REVEAL_KEY = 'site-counts-reveal';
 const GLOBAL_VOTE_INSTALLATION_ID_KEY = 'global-vote-installation-id';
+const SITE_VOTE_STATS_CACHE_KEY = 'site-vote-stats-cache';
 
 const SUPABASE_URL = (import.meta.env.WXT_SUPABASE_URL ?? '').replace(/\/+$/, '');
 const SUPABASE_PUBLIC_KEY = (
@@ -11,6 +12,12 @@ const UUID_V4_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 type SiteCountsRevealMap = Record<string, true>;
+type SiteVoteStatsCacheMap = Record<string, {
+  siteKey: string;
+  likes: number;
+  dislikes: number;
+  userVote: SitePreference;
+}>;
 
 export type SiteVoteStats = {
   siteKey: string;
@@ -19,6 +26,13 @@ export type SiteVoteStats = {
   total: number;
   likeRatio: number;
   userVote: SitePreference;
+};
+
+const applyVoteDelta = (currentCount: number, shouldDecrement: boolean, shouldIncrement: boolean): number => {
+  let next = currentCount;
+  if (shouldDecrement) next = Math.max(0, next - 1);
+  if (shouldIncrement) next += 1;
+  return next;
 };
 
 type SubmitSiteVoteRow = {
@@ -132,6 +146,33 @@ const writeRevealMap = async (map: SiteCountsRevealMap): Promise<void> => {
   });
 };
 
+const readStatsCacheMap = async (): Promise<SiteVoteStatsCacheMap> => {
+  const result = await browser.storage.local.get(SITE_VOTE_STATS_CACHE_KEY);
+  const raw = result[SITE_VOTE_STATS_CACHE_KEY];
+  if (!raw || typeof raw !== 'object') return {};
+
+  const parsed: SiteVoteStatsCacheMap = {};
+  for (const [site, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (!value || typeof value !== 'object') continue;
+    const maybeStats = value as Partial<SiteVoteStats>;
+    if (typeof maybeStats.siteKey !== 'string') continue;
+    if (!isSupportedPreference(maybeStats.userVote)) continue;
+    parsed[site] = {
+      siteKey: maybeStats.siteKey,
+      likes: toNonNegativeInteger(maybeStats.likes ?? 0),
+      dislikes: toNonNegativeInteger(maybeStats.dislikes ?? 0),
+      userVote: maybeStats.userVote,
+    };
+  }
+  return parsed;
+};
+
+const writeStatsCacheMap = async (map: SiteVoteStatsCacheMap): Promise<void> => {
+  await browser.storage.local.set({
+    [SITE_VOTE_STATS_CACHE_KEY]: map,
+  });
+};
+
 const getOrCreateInstallationId = async (): Promise<string> => {
   const result = await browser.storage.local.get(GLOBAL_VOTE_INSTALLATION_ID_KEY);
   const existing = result[GLOBAL_VOTE_INSTALLATION_ID_KEY];
@@ -168,6 +209,46 @@ export const unlockSiteCounts = async (rawUrl: string): Promise<boolean> => {
 };
 
 export const getSiteCountsRevealStorageKey = (): string => SITE_COUNTS_REVEAL_KEY;
+export const getSiteVoteStatsCacheStorageKey = (): string => SITE_VOTE_STATS_CACHE_KEY;
+
+export const getCachedSiteVoteStats = async (rawUrl: string): Promise<SiteVoteStats | null> => {
+  const normalizedSite = normalizeSiteUrl(rawUrl);
+  if (!normalizedSite) return null;
+
+  const statsMap = await readStatsCacheMap();
+  const cached = statsMap[normalizedSite];
+  if (!cached) return null;
+  return buildStats(cached.siteKey, cached.likes, cached.dislikes, cached.userVote);
+};
+
+export const setCachedSiteVoteStats = async (rawUrl: string, stats: SiteVoteStats): Promise<void> => {
+  const normalizedSite = normalizeSiteUrl(rawUrl);
+  if (!normalizedSite) return;
+
+  const statsMap = await readStatsCacheMap();
+  statsMap[normalizedSite] = {
+    siteKey: stats.siteKey,
+    likes: toNonNegativeInteger(stats.likes),
+    dislikes: toNonNegativeInteger(stats.dislikes),
+    userVote: stats.userVote,
+  };
+  await writeStatsCacheMap(statsMap);
+};
+
+export const applyOptimisticVoteStats = (
+  rawUrl: string,
+  currentStats: SiteVoteStats | null,
+  previousVote: SitePreference,
+  nextVote: SitePreference,
+): SiteVoteStats | null => {
+  const siteKey = currentStats?.siteKey ?? normalizeSiteKey(rawUrl);
+  if (!siteKey) return null;
+
+  const baseline = currentStats ?? buildStats(siteKey, 0, 0, previousVote);
+  const likes = applyVoteDelta(baseline.likes, previousVote === 'like', nextVote === 'like');
+  const dislikes = applyVoteDelta(baseline.dislikes, previousVote === 'dislike', nextVote === 'dislike');
+  return buildStats(siteKey, likes, dislikes, nextVote);
+};
 
 export const fetchSiteVoteStats = async (rawUrl: string, userVote: SitePreference): Promise<SiteVoteStats | null> => {
   const siteKey = normalizeSiteKey(rawUrl);
@@ -179,12 +260,11 @@ export const fetchSiteVoteStats = async (rawUrl: string, userVote: SitePreferenc
     });
     const rows = normalizeRpcRows<SiteVoteCountsRow>(raw);
 
-    if (rows.length === 0) {
-      return buildStats(siteKey, 0, 0, userVote);
-    }
-
-    const row = rows[0];
-    return buildStats(row.site_key, row.likes, row.dislikes, userVote);
+    const nextStats = rows.length === 0
+      ? buildStats(siteKey, 0, 0, userVote)
+      : buildStats(rows[0].site_key, rows[0].likes, rows[0].dislikes, userVote);
+    await setCachedSiteVoteStats(rawUrl, nextStats);
+    return nextStats;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     console.error('Unable to fetch site vote stats:', { message, siteKey });
@@ -208,12 +288,14 @@ export const submitSiteVote = async (rawUrl: string, vote: SitePreference): Prom
     if (rows.length === 0) return null;
 
     const row = rows[0];
-    return buildStats(
+    const nextStats = buildStats(
       row.site_key,
       row.likes,
       row.dislikes,
       isSupportedPreference(row.user_vote) ? row.user_vote : vote,
     );
+    await setCachedSiteVoteStats(rawUrl, nextStats);
+    return nextStats;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     console.error('Unable to submit site vote:', { message, siteKey, vote });

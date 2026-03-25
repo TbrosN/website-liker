@@ -11,10 +11,14 @@ import {
   SitePreference,
 } from '../../utils/siteLikes';
 import {
+  applyOptimisticVoteStats,
   fetchSiteVoteStats,
+  getCachedSiteVoteStats,
   getSiteCountsRevealStorageKey,
+  getSiteVoteStatsCacheStorageKey,
   getSiteCountsUnlocked,
   isGlobalVotingConfigured,
+  setCachedSiteVoteStats,
   SiteVoteStats,
   submitSiteVote,
   unlockSiteCounts,
@@ -49,11 +53,14 @@ export const App = () => {
   const [stats, setStats] = useState<SiteVoteStats | null>(null);
   const [statsError, setStatsError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [busy, setBusy] = useState(false);
+  const [isPrimingStats, setIsPrimingStats] = useState(false);
 
-  const refreshStats = async (site: string, userPreference: SitePreference) => {
+  const primeStats = async (site: string, userPreference: SitePreference) => {
+    if (isPrimingStats || stats) return;
+    setIsPrimingStats(true);
     setStatsError(null);
     const nextStats = await fetchSiteVoteStats(site, userPreference);
+    setIsPrimingStats(false);
     if (nextStats) {
       setStats(nextStats);
       return;
@@ -90,6 +97,9 @@ export const App = () => {
       const currentPreference = await getSitePreference(currentTab.site);
       if (cancelled) return;
       setPreference(currentPreference);
+      const cachedStats = await getCachedSiteVoteStats(currentTab.site);
+      if (cancelled) return;
+      if (cachedStats) setStats(cachedStats);
 
       let unlocked = await getSiteCountsUnlocked(currentTab.site);
       if (cancelled) return;
@@ -99,9 +109,7 @@ export const App = () => {
       }
 
       setCountsUnlocked(unlocked);
-      if (unlocked) {
-        await refreshStats(currentTab.site, currentPreference);
-      }
+      void primeStats(currentTab.site, currentPreference);
 
       if (!cancelled) setLoading(false);
     };
@@ -119,36 +127,39 @@ export const App = () => {
 
   const onSetPreference = async (nextPreference: SitePreference) => {
     if (!tabState.site) return;
-    setBusy(true);
-
-    await setSitePreference(tabState.site, nextPreference);
+    const previousPreference = preference;
     setPreference(nextPreference);
+    void setSitePreference(tabState.site, nextPreference);
 
     let unlocked = countsUnlocked;
     if (nextPreference !== 'neutral' && !unlocked) {
-      unlocked = await unlockSiteCounts(tabState.site);
-      setCountsUnlocked(unlocked);
+      unlocked = true;
+      setCountsUnlocked(true);
+      void unlockSiteCounts(tabState.site);
     }
 
     if (unlocked) {
       setStatsError(null);
-      const submitted = await submitSiteVote(tabState.site, nextPreference);
-      if (submitted) {
-        setStats(submitted);
-      } else {
-        await refreshStats(tabState.site, nextPreference);
-      }
+      setStats((currentStats) => {
+        const optimisticStats = applyOptimisticVoteStats(
+          tabState.site!,
+          currentStats,
+          previousPreference,
+          nextPreference,
+        );
+        if (optimisticStats) void setCachedSiteVoteStats(tabState.site!, optimisticStats);
+        return optimisticStats ?? currentStats;
+      });
     }
 
-    setBusy(false);
+    void submitSiteVote(tabState.site, nextPreference);
+    void primeStats(tabState.site, nextPreference);
   };
 
   const onToggleFloater = async () => {
-    setBusy(true);
     const nextHidden = !floaterHidden;
     await setFloatingControlHidden(nextHidden);
     setFloaterHidden(nextHidden);
-    setBusy(false);
   };
 
   useEffect(() => {
@@ -165,21 +176,26 @@ export const App = () => {
       if (changes[getSitePreferencesStorageKey()]) {
         void getSitePreference(site).then((nextPreference) => {
           setPreference(nextPreference);
+
           if (nextPreference !== 'neutral') {
-            void unlockSiteCounts(site).then((isUnlocked) => {
-              setCountsUnlocked(isUnlocked);
-              if (isUnlocked) void refreshStats(site, nextPreference);
-            });
-          } else if (countsUnlocked) {
-            void refreshStats(site, nextPreference);
+            setCountsUnlocked(true);
+            void unlockSiteCounts(site);
           }
+
+          void primeStats(site, nextPreference);
+        });
+      }
+
+      if (changes[getSiteVoteStatsCacheStorageKey()]) {
+        void getCachedSiteVoteStats(site).then((nextStats) => {
+          setStats(nextStats);
         });
       }
 
       if (changes[getSiteCountsRevealStorageKey()]) {
         void getSiteCountsUnlocked(site).then((isUnlocked) => {
           setCountsUnlocked(isUnlocked);
-          if (isUnlocked) void refreshStats(site, preference);
+          if (isUnlocked) void primeStats(site, preference);
         });
       }
     };
@@ -188,9 +204,10 @@ export const App = () => {
     return () => {
       browser.storage.onChanged.removeListener(onStorageChanged);
     };
-  }, [tabState.site, countsUnlocked, preference]);
+  }, [tabState.site, countsUnlocked, preference, isPrimingStats, stats]);
 
-  const positivePct = stats && stats.total > 0 ? Math.round(stats.likeRatio * 100) : null;
+  const showCounts = Boolean(tabState.site && countsUnlocked && preference !== 'neutral' && !statsError && stats);
+  const displayStats = showCounts ? stats : null;
 
   return (
     <main className="popup-root">
@@ -200,22 +217,25 @@ export const App = () => {
 
       <div className="preference-actions" role="group" aria-label="Site preference">
         <button
-          className={`preference-button dislike ${preference === 'dislike' ? 'active' : ''}`}
-          onClick={() => onSetPreference(preference === 'dislike' ? 'neutral' : 'dislike')}
-          disabled={loading || busy || !tabState.site}
-          aria-label="Dislike site"
-          title="Dislike site"
-        >
-          👎
-        </button>
-        <button
           className={`preference-button like ${preference === 'like' ? 'active' : ''}`}
           onClick={() => onSetPreference(preference === 'like' ? 'neutral' : 'like')}
-          disabled={loading || busy || !tabState.site}
+          disabled={loading || !tabState.site}
           aria-label="Like site"
           title="Like site"
         >
-          👍
+          <span className="preference-icon" aria-hidden="true">👍</span>
+          {displayStats && <span className="preference-count">{formatCount(displayStats.likes)}</span>}
+        </button>
+        <span className="preference-divider" aria-hidden="true" />
+        <button
+          className={`preference-button dislike ${preference === 'dislike' ? 'active' : ''}`}
+          onClick={() => onSetPreference(preference === 'dislike' ? 'neutral' : 'dislike')}
+          disabled={loading || !tabState.site}
+          aria-label="Dislike site"
+          title="Dislike site"
+        >
+          {displayStats && <span className="preference-count">{formatCount(displayStats.dislikes)}</span>}
+          <span className="preference-icon" aria-hidden="true">👎</span>
         </button>
       </div>
 
@@ -223,25 +243,14 @@ export const App = () => {
         <p className="counts-hint">Vote to unlock community likes/dislikes for this site.</p>
       )}
 
-      {tabState.site && countsUnlocked && (
-        <section className="community-card" aria-live="polite">
-          <p className="community-label">Community</p>
-          {statsError && <p className="community-error">{statsError}</p>}
-          {!statsError && !stats && <p className="community-loading">Loading community stats...</p>}
-          {!statsError && stats && (
-            <div className="community-counts">
-              <span>{formatCount(stats.likes)} 👍</span>
-              <span>{formatCount(stats.dislikes)} 👎</span>
-              {positivePct !== null && <span>{positivePct}% positive</span>}
-            </div>
-          )}
-        </section>
+      {tabState.site && countsUnlocked && statsError && (
+        <p className="community-error" aria-live="polite">{statsError}</p>
       )}
 
       <button
         className="show-floater-button"
         onClick={onToggleFloater}
-        disabled={loading || busy}
+        disabled={loading}
         title={floaterHidden ? 'Show floating controls' : 'Hide floating controls'}
       >
         {floaterHidden ? 'Show floater' : 'Hide floater'}
