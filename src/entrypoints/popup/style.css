@@ -1,0 +1,68 @@
+:root {
+  color-scheme: light dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+}
+
+.popup-root {
+  width: 320px;
+  min-height: 220px;
+  padding: 18px;
+  background: linear-gradient(180deg, #0f172a, #111827);
+  color: #f9fafb;
+  font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
+}
+
+.eyebrow {
+  margin: 0 0 8px;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #60a5fa;
+}
+
+.title {
+  margin: 0;
+  font-size: 20px;
+  line-height: 1.2;
+}
+
+.subtitle {
+  margin: 8px 0 18px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: #cbd5e1;
+  word-break: break-all;
+}
+
+.like-button {
+  width: 100%;
+  border: 0;
+  border-radius: 12px;
+  padding: 12px 14px;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  background: #1e293b;
+  color: #f8fafc;
+  transition: transform 0.15s ease, background-color 0.2s ease;
+}
+
+.like-button:hover:enabled {
+  transform: translateY(-1px);
+}
+
+.like-button:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.like-button.liked {
+  background: #16a34a;
+}
