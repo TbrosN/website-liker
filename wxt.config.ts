@@ -5,7 +5,8 @@ export default defineConfig({
   modules: ['@wxt-dev/module-react'],
   manifest: {
     name: 'Website Liker',
-    description: 'Local thumbs up proof-of-concept for websites.',
+    description:
+      'Like and dislike websites, and see how many others have liked or disliked them.',
     permissions: ['tabs', 'storage'],
     host_permissions: ['https://*.supabase.co/*'],
   },
