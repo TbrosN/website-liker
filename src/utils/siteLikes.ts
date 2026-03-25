@@ -10,8 +10,18 @@ export const normalizeSiteUrl = (rawUrl: string): string | null => {
   try {
     const parsed = new URL(rawUrl);
     if (!/^https?:$/.test(parsed.protocol)) return null;
-    const normalizedPath = parsed.pathname.replace(/\/+$/, '') || '/';
-    return `${parsed.origin}${normalizedPath}`;
+    const normalizedHost = parsed.hostname.toLowerCase().replace(/^www\./, '');
+    return `${parsed.protocol}//${normalizedHost}`;
+  } catch {
+    return null;
+  }
+};
+
+export const normalizeSiteKey = (rawUrl: string): string | null => {
+  try {
+    const parsed = new URL(rawUrl);
+    if (!/^https?:$/.test(parsed.protocol)) return null;
+    return parsed.hostname.toLowerCase().replace(/^www\./, '');
   } catch {
     return null;
   }

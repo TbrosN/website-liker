@@ -2,3 +2,5 @@ node_modules
 .output
 .wxt
 *.log
+.env
+.env.local

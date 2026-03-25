@@ -8,12 +8,22 @@ import {
   setSitePreference,
   SitePreference,
 } from '../utils/siteLikes';
+import {
+  fetchSiteVoteStats,
+  getSiteCountsRevealStorageKey,
+  getSiteCountsUnlocked,
+  isGlobalVotingConfigured,
+  SiteVoteStats,
+  submitSiteVote,
+  unlockSiteCounts,
+} from '../utils/globalVotes';
 
 const CONTROL_ID = 'website-liker-floating-control';
 const DRAG_HANDLE_ID = 'website-liker-floating-drag-handle';
 const DISLIKE_BUTTON_ID = 'website-liker-floating-dislike';
 const LIKE_BUTTON_ID = 'website-liker-floating-like';
 const HIDE_BUTTON_ID = 'website-liker-floating-hide';
+const STATS_BADGE_ID = 'website-liker-floating-stats';
 
 type FloatingControl = {
   container: HTMLDivElement;
@@ -21,10 +31,18 @@ type FloatingControl = {
   dislikeButton: HTMLButtonElement;
   likeButton: HTMLButtonElement;
   hideButton: HTMLButtonElement;
+  statsBadge: HTMLDivElement;
   isDragging: boolean;
   isHovered: boolean;
   currentPreference: SitePreference;
 };
+
+const compactNumberFormatter = new Intl.NumberFormat(undefined, {
+  notation: 'compact',
+  maximumFractionDigits: 1,
+});
+
+const formatCompactCount = (count: number): string => compactNumberFormatter.format(count);
 
 const createControlButton = (id: string, label: string, title: string, width = 40): HTMLButtonElement => {
   const button = document.createElement('button');
@@ -51,12 +69,14 @@ const ensureFloatingControl = (): FloatingControl => {
   const existingDislike = document.getElementById(DISLIKE_BUTTON_ID);
   const existingLike = document.getElementById(LIKE_BUTTON_ID);
   const existingHide = document.getElementById(HIDE_BUTTON_ID);
+  const existingStatsBadge = document.getElementById(STATS_BADGE_ID);
   if (
     existingContainer instanceof HTMLDivElement &&
     existingDragHandle instanceof HTMLButtonElement &&
     existingDislike instanceof HTMLButtonElement &&
     existingLike instanceof HTMLButtonElement &&
-    existingHide instanceof HTMLButtonElement
+    existingHide instanceof HTMLButtonElement &&
+    existingStatsBadge instanceof HTMLDivElement
   ) {
     return {
       container: existingContainer,
@@ -64,6 +84,7 @@ const ensureFloatingControl = (): FloatingControl => {
       dislikeButton: existingDislike,
       likeButton: existingLike,
       hideButton: existingHide,
+      statsBadge: existingStatsBadge,
       isDragging: false,
       isHovered: false,
       currentPreference: 'neutral',
@@ -110,14 +131,42 @@ const ensureFloatingControl = (): FloatingControl => {
   hideButton.style.borderTopRightRadius = '999px';
   hideButton.style.borderBottomRightRadius = '999px';
 
+  const statsBadge = document.createElement('div');
+  statsBadge.id = STATS_BADGE_ID;
+  statsBadge.style.position = 'absolute';
+  statsBadge.style.right = '0';
+  statsBadge.style.top = '40px';
+  statsBadge.style.minHeight = '22px';
+  statsBadge.style.padding = '4px 8px';
+  statsBadge.style.borderRadius = '999px';
+  statsBadge.style.background = 'rgba(15, 23, 42, 0.95)';
+  statsBadge.style.border = '1px solid rgba(255, 255, 255, 0.15)';
+  statsBadge.style.color = '#e2e8f0';
+  statsBadge.style.fontSize = '11px';
+  statsBadge.style.fontWeight = '600';
+  statsBadge.style.lineHeight = '1';
+  statsBadge.style.whiteSpace = 'nowrap';
+  statsBadge.style.boxShadow = '0 2px 8px rgba(0, 0, 0, 0.2)';
+  statsBadge.style.display = 'none';
+
   dragHandle.style.borderRight = '1px solid rgba(255, 255, 255, 0.12)';
   dislikeButton.style.borderRight = '1px solid rgba(255, 255, 255, 0.12)';
   hideButton.style.borderLeft = '1px solid rgba(255, 255, 255, 0.12)';
 
-  container.append(dislikeButton, likeButton, dragHandle, hideButton);
+  container.append(dislikeButton, likeButton, dragHandle, hideButton, statsBadge);
   document.body.append(container);
 
-  return { container, dragHandle, dislikeButton, likeButton, hideButton, isDragging: false, isHovered: false, currentPreference: 'neutral' };
+  return {
+    container,
+    dragHandle,
+    dislikeButton,
+    likeButton,
+    hideButton,
+    statsBadge,
+    isDragging: false,
+    isHovered: false,
+    currentPreference: 'neutral',
+  };
 };
 
 const renderControlState = (control: FloatingControl, preference: SitePreference): void => {
@@ -183,6 +232,51 @@ const setPreferenceButtonsLayout = (control: FloatingControl): void => {
     control.likeButton.style.borderTopRightRadius = '999px';
     control.likeButton.style.borderBottomRightRadius = '999px';
   }
+};
+
+const renderStatsBadge = (
+  control: FloatingControl,
+  unlocked: boolean,
+  stats: SiteVoteStats | null,
+  state: 'ready' | 'loading' | 'error',
+): void => {
+  const badge = control.statsBadge;
+  if (!unlocked) {
+    badge.style.display = 'none';
+    badge.textContent = '';
+    badge.title = '';
+    return;
+  }
+
+  badge.style.display = 'inline-flex';
+
+  if (!isGlobalVotingConfigured()) {
+    badge.textContent = 'Community stats unavailable';
+    badge.title = 'Set WXT_SUPABASE_URL and WXT_SUPABASE_PUBLISHABLE_KEY to enable global counts.';
+    return;
+  }
+
+  if (state === 'loading') {
+    badge.textContent = 'Loading community stats...';
+    badge.title = 'Fetching global likes/dislikes';
+    return;
+  }
+
+  if (state === 'error') {
+    badge.textContent = 'Unable to load stats';
+    badge.title = 'Vote was saved locally, but global stats could not be loaded.';
+    return;
+  }
+
+  if (!stats) {
+    badge.textContent = '0 👍 0 👎';
+    badge.title = 'No community votes yet';
+    return;
+  }
+
+  const positivePct = stats.total > 0 ? Math.round(stats.likeRatio * 100) : 0;
+  badge.textContent = `${formatCompactCount(stats.likes)} 👍  ${formatCompactCount(stats.dislikes)} 👎`;
+  badge.title = `${stats.likes.toLocaleString()} likes • ${stats.dislikes.toLocaleString()} dislikes (${positivePct}% positive)`;
 };
 
 const setupDragging = (control: FloatingControl): void => {
@@ -262,20 +356,57 @@ export default defineContentScript({
     const control = ensureFloatingControl();
     setupDragging(control);
 
+    let countsUnlocked = false;
+    let latestStats: SiteVoteStats | null = null;
+
     const applyVisibility = async () => {
       control.container.style.display = (await getFloatingControlHidden()) ? 'none' : 'inline-flex';
     };
 
+    const refreshStats = async (preference: SitePreference) => {
+      if (!countsUnlocked) {
+        renderStatsBadge(control, false, null, 'ready');
+        return;
+      }
+
+      renderStatsBadge(control, true, latestStats, 'loading');
+      const nextStats = await fetchSiteVoteStats(currentSite, preference);
+      if (nextStats) {
+        latestStats = nextStats;
+        renderStatsBadge(control, true, latestStats, 'ready');
+        return;
+      }
+
+      renderStatsBadge(control, true, latestStats, 'error');
+    };
+
+    const syncFromPreference = async () => {
+      const preference = await getSitePreference(currentSite);
+      renderControlState(control, preference);
+      setPreferenceButtonsLayout(control);
+
+      if (preference !== 'neutral' && !countsUnlocked) {
+        countsUnlocked = await unlockSiteCounts(currentSite);
+      }
+
+      if (countsUnlocked) {
+        await refreshStats(preference);
+      } else {
+        renderStatsBadge(control, false, null, 'ready');
+      }
+    };
+
     await applyVisibility();
     setAccessoryButtonsVisible(control, false);
-    renderControlState(control, await getSitePreference(currentSite));
-    setPreferenceButtonsLayout(control);
+    countsUnlocked = await getSiteCountsUnlocked(currentSite);
+    await syncFromPreference();
 
     control.container.addEventListener('mouseenter', () => {
       control.isHovered = true;
       setAccessoryButtonsVisible(control, true);
       setPreferenceButtonsLayout(control);
     });
+
     control.container.addEventListener('mouseleave', () => {
       control.isHovered = false;
       setAccessoryButtonsVisible(control, false);
@@ -287,30 +418,53 @@ export default defineContentScript({
       await applyVisibility();
     });
 
-    control.dislikeButton.addEventListener('click', async () => {
+    const onSetPreference = async (target: 'like' | 'dislike') => {
       if (control.isDragging) return;
+
       const current = await getSitePreference(currentSite);
-      const next: SitePreference = current === 'dislike' ? 'neutral' : 'dislike';
+      const next: SitePreference = current === target ? 'neutral' : target;
       renderControlState(control, await setSitePreference(currentSite, next));
       setPreferenceButtonsLayout(control);
+
+      if (next !== 'neutral' && !countsUnlocked) {
+        countsUnlocked = await unlockSiteCounts(currentSite);
+      }
+
+      if (!countsUnlocked) return;
+
+      renderStatsBadge(control, true, latestStats, 'loading');
+      const submittedStats = await submitSiteVote(currentSite, next);
+      if (submittedStats) {
+        latestStats = submittedStats;
+        renderStatsBadge(control, true, latestStats, 'ready');
+        return;
+      }
+
+      await refreshStats(next);
+    };
+
+    control.dislikeButton.addEventListener('click', async () => {
+      await onSetPreference('dislike');
     });
 
     control.likeButton.addEventListener('click', async () => {
-      if (control.isDragging) return;
-      const current = await getSitePreference(currentSite);
-      const next: SitePreference = current === 'like' ? 'neutral' : 'like';
-      renderControlState(control, await setSitePreference(currentSite, next));
-      setPreferenceButtonsLayout(control);
+      await onSetPreference('like');
     });
 
     browser.storage.onChanged.addListener((changes: Record<string, unknown>, areaName: string) => {
       if (areaName !== 'local') return;
+
       if (changes[getSitePreferencesStorageKey()]) {
-        void getSitePreference(currentSite).then((preference) => {
-          renderControlState(control, preference);
-          setPreferenceButtonsLayout(control);
+        void syncFromPreference();
+      }
+
+      if (changes[getSiteCountsRevealStorageKey()]) {
+        void getSiteCountsUnlocked(currentSite).then((isUnlocked) => {
+          countsUnlocked = isUnlocked;
+          void syncFromPreference();
         });
       }
+
       if (changes[getFloatingControlHiddenStorageKey()]) {
         void applyVisibility();
       }

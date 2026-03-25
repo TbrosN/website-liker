@@ -7,5 +7,6 @@ export default defineConfig({
     name: 'Website Liker',
     description: 'Local thumbs up proof-of-concept for websites.',
     permissions: ['tabs', 'storage'],
+    host_permissions: ['https://*.supabase.co/*'],
   },
 });

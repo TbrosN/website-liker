@@ -98,3 +98,45 @@ body {
   opacity: 0.6;
   cursor: not-allowed;
 }
+
+.counts-hint {
+  margin: 0 0 10px;
+  font-size: 12px;
+  color: #cbd5e1;
+}
+
+.community-card {
+  margin: 0 0 10px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  background: rgba(15, 23, 42, 0.45);
+}
+
+.community-label {
+  margin: 0 0 6px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #93c5fd;
+}
+
+.community-counts {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  font-size: 12px;
+  font-weight: 700;
+  color: #e2e8f0;
+}
+
+.community-loading,
+.community-error {
+  margin: 0;
+  font-size: 12px;
+  color: #cbd5e1;
+}
+
+.community-error {
+  color: #fecaca;
+}
