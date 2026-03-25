@@ -1,6 +1,6 @@
 # Website Liker (Chrome Extension PoC)
 
-A proof-of-concept browser extension where you can thumbs up the current website locally.
+A proof-of-concept browser extension where you can set a local preference for the current website.
 
 ## Stack
 
@@ -11,9 +11,9 @@ A proof-of-concept browser extension where you can thumbs up the current website
 
 ## What this PoC does
 
-- Adds a popup UI with a **Like this site** button for the active tab.
-- Injects a floating thumbs-up button on normal web pages (`http/https`).
-- Stores liked state locally in `browser.storage.local`.
+- Adds a popup UI with **Like**, **Dislike**, and **Neutral** actions for the active tab.
+- Injects a floating button on normal web pages (`http/https`) that cycles through neutral/like/dislike.
+- Stores site preference locally in `browser.storage.local`.
 - Keeps popup/content script in sync via storage change events.
 
 ## Project structure
@@ -22,7 +22,7 @@ A proof-of-concept browser extension where you can thumbs up the current website
 - `src/entrypoints/background.ts`: background service worker entrypoint
 - `src/entrypoints/content.ts`: floating page button entrypoint
 - `src/entrypoints/popup/*`: popup React app
-- `src/utils/siteLikes.ts`: local like-state helpers
+- `src/utils/siteLikes.ts`: local preference-state helpers
 
 ## Run locally
 

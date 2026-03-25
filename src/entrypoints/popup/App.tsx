@@ -1,6 +1,14 @@
 import { useEffect, useMemo, useState } from 'react';
 
-import { isSiteLiked, normalizeSiteUrl, toggleSiteLike } from '../../utils/siteLikes';
+import {
+  getFloatingControlHiddenStorageKey,
+  getFloatingControlHidden,
+  getSitePreference,
+  normalizeSiteUrl,
+  setFloatingControlHidden,
+  setSitePreference,
+  SitePreference,
+} from '../../utils/siteLikes';
 
 type TabState = {
   site: string | null;
@@ -18,7 +26,8 @@ const getActiveTabState = async (): Promise<TabState> => {
 
 export const App = () => {
   const [tabState, setTabState] = useState<TabState>({ site: null, title: 'Current tab' });
-  const [liked, setLiked] = useState(false);
+  const [preference, setPreference] = useState<SitePreference>('neutral');
+  const [floaterHidden, setFloaterHidden] = useState(false);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -29,11 +38,13 @@ export const App = () => {
       if (cancelled) return;
       setTabState(currentTab);
       if (!currentTab.site) {
-        setLiked(false);
+        setPreference('neutral');
+        setFloaterHidden(await getFloatingControlHidden());
         setLoading(false);
         return;
       }
-      setLiked(await isSiteLiked(currentTab.site));
+      setPreference(await getSitePreference(currentTab.site));
+      setFloaterHidden(await getFloatingControlHidden());
       setLoading(false);
     };
     void load();
@@ -43,17 +54,37 @@ export const App = () => {
   }, []);
 
   const subtitle = useMemo(() => {
-    if (!tabState.site) return 'Open a normal website tab (http/https) to like it.';
+    if (!tabState.site) return 'Open a normal website tab (http/https) to set a preference.';
     return tabState.site;
   }, [tabState.site]);
 
-  const onToggleLike = async () => {
+  const onSetPreference = async (nextPreference: SitePreference) => {
     if (!tabState.site) return;
     setLoading(true);
-    const nextState = await toggleSiteLike(tabState.site);
-    setLiked(nextState);
+    await setSitePreference(tabState.site, nextPreference);
+    setPreference(nextPreference);
     setLoading(false);
   };
+
+  const onToggleFloater = async () => {
+    setLoading(true);
+    const nextHidden = !floaterHidden;
+    await setFloatingControlHidden(nextHidden);
+    setFloaterHidden(nextHidden);
+    setLoading(false);
+  };
+
+  useEffect(() => {
+    const onStorageChanged = (changes: Record<string, unknown>, areaName: string) => {
+      if (areaName !== 'local') return;
+      if (!changes[getFloatingControlHiddenStorageKey()]) return;
+      void getFloatingControlHidden().then((hidden) => setFloaterHidden(hidden));
+    };
+    browser.storage.onChanged.addListener(onStorageChanged);
+    return () => {
+      browser.storage.onChanged.removeListener(onStorageChanged);
+    };
+  }, []);
 
   return (
     <main className="popup-root">
@@ -61,8 +92,33 @@ export const App = () => {
       <h1 className="title">{tabState.title}</h1>
       <p className="subtitle">{subtitle}</p>
 
-      <button className={`like-button ${liked ? 'liked' : ''}`} onClick={onToggleLike} disabled={loading || !tabState.site}>
-        {liked ? '👍 Liked' : '👍 Like this site'}
+      <div className="preference-actions" role="group" aria-label="Site preference">
+        <button
+          className={`preference-button dislike ${preference === 'dislike' ? 'active' : ''}`}
+          onClick={() => onSetPreference(preference === 'dislike' ? 'neutral' : 'dislike')}
+          disabled={loading || !tabState.site}
+          aria-label="Dislike site"
+          title="Dislike site"
+        >
+          👎
+        </button>
+        <button
+          className={`preference-button like ${preference === 'like' ? 'active' : ''}`}
+          onClick={() => onSetPreference(preference === 'like' ? 'neutral' : 'like')}
+          disabled={loading || !tabState.site}
+          aria-label="Like site"
+          title="Like site"
+        >
+          👍
+        </button>
+      </div>
+      <button
+        className="show-floater-button"
+        onClick={onToggleFloater}
+        disabled={loading}
+        title={floaterHidden ? 'Show floating controls' : 'Hide floating controls'}
+      >
+        {floaterHidden ? 'Show floater' : 'Hide floater'}
       </button>
     </main>
   );

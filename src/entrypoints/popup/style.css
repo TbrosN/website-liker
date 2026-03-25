@@ -41,28 +41,60 @@ body {
   word-break: break-all;
 }
 
-.like-button {
-  width: 100%;
+.preference-actions {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.preference-button {
+  flex: 1;
   border: 0;
-  border-radius: 12px;
-  padding: 12px 14px;
-  font-size: 14px;
+  border-radius: 999px;
+  height: 40px;
+  font-size: 18px;
   font-weight: 700;
   cursor: pointer;
   background: #1e293b;
   color: #f8fafc;
-  transition: transform 0.15s ease, background-color 0.2s ease;
+  transition: transform 0.15s ease, background-color 0.2s ease, opacity 0.2s ease;
 }
 
-.like-button:hover:enabled {
+.preference-button:hover:enabled {
   transform: translateY(-1px);
 }
 
-.like-button:disabled {
+.preference-button:disabled {
   opacity: 0.7;
   cursor: not-allowed;
 }
 
-.like-button.liked {
+.preference-button.like.active {
   background: #16a34a;
+}
+
+.preference-button.dislike.active {
+  background: #dc2626;
+}
+
+.show-floater-button {
+  width: 100%;
+  border: 0;
+  border-radius: 8px;
+  height: 34px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  background: #334155;
+  color: #e2e8f0;
+  transition: background-color 0.2s ease, opacity 0.2s ease;
+}
+
+.show-floater-button:hover:enabled {
+  background: #475569;
+}
+
+.show-floater-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
