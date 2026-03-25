@@ -7,7 +7,7 @@ export default defineConfig({
     name: 'Website Liker',
     description:
       'Like and dislike websites, and see how many others have liked or disliked them.',
-    permissions: ['tabs', 'storage'],
+    permissions: ['activeTab', 'storage'],
     host_permissions: ['https://*.supabase.co/*'],
   },
 });
